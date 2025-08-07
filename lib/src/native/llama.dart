@@ -64,11 +64,8 @@ class Llama {
       } else if (data is String) {
         if (!_responseController.isClosed) {
           _responseController.add(data);
-        } else {
-          print('Received data after _responseController was closed');
         }
       } else if (data == null) {
-        print('data == null: _responseController has been closed');
         _responseController.close();
       }
     }
