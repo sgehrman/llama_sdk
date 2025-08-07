@@ -37,7 +37,8 @@ rm .flake8
 rm CONTRIBUTING.md
 rm AUTHORS
 rm .ecrc
-rm convert_hf_to_gguf.py
+# src/llama_cpp/CMakeLists.txt needs convert_hf_to_gguf.py
+# rm convert_hf_to_gguf.py
 rm convert_hf_to_gguf_update.py
 rm convert_llama_ggml_to_gguf.py
 rm convert_lora_to_gguf.py
