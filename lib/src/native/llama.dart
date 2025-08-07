@@ -62,8 +62,13 @@ class Llama {
         _sendPort = data;
         _initialized.complete();
       } else if (data is String) {
-        _responseController.add(data);
+        if (!_responseController.isClosed) {
+          _responseController.add(data);
+        } else {
+          print('Received data after _responseController was closed');
+        }
       } else if (data == null) {
+        print('data == null: _responseController has been closed');
         _responseController.close();
       }
     }
