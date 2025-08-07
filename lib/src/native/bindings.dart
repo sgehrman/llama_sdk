@@ -76,7 +76,8 @@ class llama {
 
   late final _llama_log_disablePtr =
       _lookup<ffi.NativeFunction<ffi.Void Function()>>('llama_log_disable');
-  late final _llama_log_disable = _llama_log_disablePtr.asFunction<void Function()>();
+  late final _llama_log_disable =
+      _llama_log_disablePtr.asFunction<void Function()>();
 }
 
 typedef dart_output
