@@ -18,8 +18,7 @@ part of 'package:llama_sdk/llama_sdk.dart';
 /// The [reload] method stops the current operation and reloads the isolate.
 class Llama {
   Completer _initialized = Completer();
-  StreamController<String> _responseController = StreamController<String>()
-    ..close();
+  final _ResponseController _responseController = _ResponseController();
   Isolate? _isolate;
   SendPort? _sendPort;
   ReceivePort? _receivePort;
@@ -62,9 +61,7 @@ class Llama {
         _sendPort = data;
         _initialized.complete();
       } else if (data is String) {
-        if (!_responseController.isClosed) {
-          _responseController.add(data);
-        }
+        _responseController.add(data);
       } else if (data == null) {
         _responseController.close();
       }
@@ -87,11 +84,11 @@ class Llama {
       await _initialized.future;
     }
 
-    _responseController = StreamController<String>();
+    final stream = await _responseController.start();
 
     _sendPort!.send(messages.toRecords());
 
-    await for (final response in _responseController.stream) {
+    await for (final response in stream) {
       yield response;
     }
   }
@@ -103,11 +100,47 @@ class Llama {
   /// properly released and the system is left in a stable state.
   void stop() => lib.llama_llm_stop();
 
+  /// Disables logging for the Llama model.
+  void disableLogging() => lib.llama_log_disable();
+
   /// Frees the resources used by the Llama model.
   void reload() {
     lib.llama_llm_free();
     _isolate?.kill(priority: Isolate.immediate);
     _receivePort?.close();
     _initialized = Completer();
+  }
+}
+
+// =========================================================
+
+class _ResponseController {
+  StreamController<String> _responseController = StreamController<String>()
+    ..close();
+  Completer? _doneCompleter;
+
+  Future<Stream<String>> start() async {
+    // must wait for the previous doneCompleter to complete
+    if (_doneCompleter != null) {
+      await _doneCompleter!.future;
+      _doneCompleter = null;
+    }
+
+    _doneCompleter = Completer();
+    _responseController = StreamController<String>();
+
+    return _responseController.stream;
+  }
+
+  void add(String response) {
+    if (!_responseController.isClosed) {
+      _responseController.add(response);
+    }
+  }
+
+  void close() {
+    _responseController.close();
+
+    _doneCompleter?.complete();
   }
 }

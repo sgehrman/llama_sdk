@@ -200,3 +200,13 @@ void llama_llm_free(void) {
     llama_free(ctx);
     llama_model_free(model);
 }
+
+static void llama_null_log_callback(enum ggml_log_level level, const char * text, void * user_data) {
+    (void) level;
+    (void) text;
+    (void) user_data;
+}
+
+void llama_log_disable(void) {
+    llama_log_set(llama_null_log_callback, NULL);
+}
