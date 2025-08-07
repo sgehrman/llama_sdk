@@ -1,11 +1,11 @@
 #include "api.h"
-#include "llama.h"
 #include "json.hpp"
+#include "llama.h"
 #include "params.hpp"
-#include <cassert>
-#include <vector>
 #include <atomic>
+#include <cassert>
 #include <mutex>
+#include <vector>
 
 static std::atomic_bool stop_generation(false);
 static std::mutex continue_mutex;
@@ -23,10 +23,7 @@ std::vector<llama_chat_message> llama_parse_messages(char * messages) {
         auto role = message["role"].get<std::string>();
         auto content = message["content"].get<std::string>();
 
-        llama_chat_message msg = {
-            strdup(role.c_str()),
-            strdup(content.c_str())
-        };
+        llama_chat_message msg = {strdup(role.c_str()), strdup(content.c_str())};
 
         result.push_back(msg);
     }
@@ -115,10 +112,12 @@ int llama_prompt(char * msgs, dart_output * output) {
     std::vector<char> formatted(llama_n_ctx(ctx));
 
     const char * tmpl = llama_model_chat_template(model, nullptr);
-    int new_len = llama_chat_apply_template(tmpl, messages.data(), messages.size(), true, formatted.data(), formatted.size());
+    int new_len =
+        llama_chat_apply_template(tmpl, messages.data(), messages.size(), true, formatted.data(), formatted.size());
     if (new_len > (int) formatted.size()) {
         formatted.resize(new_len);
-        new_len = llama_chat_apply_template(tmpl, messages.data(), messages.size(), true, formatted.data(), formatted.size());
+        new_len =
+            llama_chat_apply_template(tmpl, messages.data(), messages.size(), true, formatted.data(), formatted.size());
     }
 
     if (new_len < 0) {
@@ -136,7 +135,8 @@ int llama_prompt(char * msgs, dart_output * output) {
     // tokenize the prompt
     const int n_prompt_tokens = -llama_tokenize(vocab, prompt.c_str(), prompt.size(), NULL, 0, is_first, true);
     std::vector<llama_token> prompt_tokens(n_prompt_tokens);
-    if (llama_tokenize(vocab, prompt.c_str(), prompt.size(), prompt_tokens.data(), prompt_tokens.size(), is_first, true) < 0) {
+    if (llama_tokenize(vocab, prompt.c_str(), prompt.size(), prompt_tokens.data(), prompt_tokens.size(), is_first,
+                       true) < 0) {
         GGML_ABORT("failed to tokenize the prompt\n");
     }
 
@@ -151,7 +151,7 @@ int llama_prompt(char * msgs, dart_output * output) {
             fprintf(stderr, "context size exceeded\n");
             break;
         }
-        
+
         if (llama_decode(ctx, batch)) {
             GGML_ABORT("failed to decode\n");
         }
@@ -186,7 +186,7 @@ int llama_prompt(char * msgs, dart_output * output) {
         fprintf(stderr, "failed to apply the chat template\n");
         return 1;
     }
-    
+
     output(nullptr);
     return 0;
 }
