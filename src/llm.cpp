@@ -164,6 +164,20 @@ int llama_prompt(char * msgs, dart_output * output) {
         return 1;
     }
 
+    // Validate prev_len bounds
+    if (prev_len < 0 || prev_len > new_len || prev_len > formatted.size()) {
+        fprintf(stderr, "Invalid previous length: %d (new_len: %d, buffer_size: %zu)\n", prev_len, new_len,
+                formatted.size());
+        prev_len = 0; // Reset to safe value
+    }
+
+    // Additional safety check for iterator bounds
+    if (new_len > formatted.size()) {
+        fprintf(stderr, "Template length exceeds buffer size: %d > %zu\n", new_len, formatted.size());
+        free_messages(messages);
+        return 1;
+    }
+
     // remove previous messages to obtain the prompt to generate the response
     std::string prompt(formatted.begin() + prev_len, formatted.begin() + new_len);
 
@@ -229,11 +243,18 @@ int llama_prompt(char * msgs, dart_output * output) {
     llama_chat_message assistant_msg = {strdup("assistant"), strdup(response.c_str())};
     messages.push_back(assistant_msg);
 
-    prev_len = llama_chat_apply_template(tmpl, messages.data(), messages.size(), false, nullptr, 0);
-    if (prev_len < 0) {
+    int new_prev_len = llama_chat_apply_template(tmpl, messages.data(), messages.size(), false, nullptr, 0);
+    if (new_prev_len < 0) {
         fprintf(stderr, "Failed to apply the chat template for response\n");
         free_messages(messages);
         return 1;
+    }
+
+    // Validate and set prev_len safely
+    if (new_prev_len >= 0) {
+        prev_len = new_prev_len;
+    } else {
+        fprintf(stderr, "Invalid template length returned, keeping previous value\n");
     }
 
     free_messages(messages);
