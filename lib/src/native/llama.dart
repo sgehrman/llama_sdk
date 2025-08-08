@@ -22,6 +22,7 @@ class Llama {
   Isolate? _isolate;
   SendPort? _sendPort;
   ReceivePort? _receivePort;
+  bool _stopped = false;
 
   LlamaController _controller;
 
@@ -88,8 +89,12 @@ class Llama {
 
     _sendPort!.send(messages.toRecords());
 
+    _stopped = false;
+
     await for (final response in stream) {
-      yield response;
+      if (!_stopped) {
+        yield response;
+      }
     }
   }
 
@@ -98,7 +103,11 @@ class Llama {
   /// This method should be called to terminate any ongoing tasks or
   /// processes that need to be halted. It ensures that resources are
   /// properly released and the system is left in a stable state.
-  void stop() => lib.llama_llm_stop();
+  void stop() {
+    _stopped = true;
+
+    lib.llama_llm_stop();
+  }
 
   /// Disables logging for the Llama model.
   void disableLogging() => lib.llama_log_disable();
