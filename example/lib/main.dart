@@ -45,7 +45,8 @@ class LlamaAppState extends State<LlamaApp> {
     }
 
     final llamaCpp = Llama(LlamaController(
-        modelPath: resultFile.path, nCtx: 2048, nBatch: 2048, greedy: true));
+        modelPath: resultFile.path, nCtx: 2048, nBatch: 2048, greedy: true))
+      ..disableLogging();
 
     setState(() {
       model = llamaCpp;

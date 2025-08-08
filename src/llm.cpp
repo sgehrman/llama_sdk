@@ -15,20 +15,54 @@ static llama_context * ctx = nullptr;
 static llama_sampler * smpl = nullptr;
 static int prev_len = 0;
 
-std::vector<llama_chat_message> llama_parse_messages(char * messages) {
-    auto json_messages = json::parse(messages);
+// Helper function to free message memory
+static void free_messages(std::vector<llama_chat_message> & messages) {
+    for (auto & msg : messages) {
+        if (msg.role) {
+            free(const_cast<char *>(msg.role));
+            msg.role = nullptr;
+        }
+        if (msg.content) {
+            free(const_cast<char *>(msg.content));
+            msg.content = nullptr;
+        }
+    }
+    messages.clear();
+}
+
+static std::vector<llama_chat_message> llama_parse_messages(char * messages) {
     std::vector<llama_chat_message> result;
 
-    for (auto & message : json_messages) {
-        auto role = message["role"].get<std::string>();
-        auto content = message["content"].get<std::string>();
+    try {
+        auto json_messages = json::parse(messages);
+        result.reserve(json_messages.size());
 
-        llama_chat_message msg = {strdup(role.c_str()), strdup(content.c_str())};
+        for (const auto & message : json_messages) {
+            if (!message.contains("role") || !message.contains("content")) {
+                fprintf(stderr, "Invalid message format: missing 'role' or 'content'\n");
+                continue;
+            }
 
-        result.push_back(msg);
+            auto role = message["role"].get<std::string>();
+            auto content = message["content"].get<std::string>();
+
+            llama_chat_message msg = {strdup(role.c_str()), strdup(content.c_str())};
+
+            result.push_back(msg);
+        }
+
+        return result;
+    } catch (const json::exception & e) {
+        fprintf(stderr, "JSON parsing error: %s\n", e.what());
+        // Clean up any partially allocated messages
+        free_messages(result);
+        return {};
+    } catch (const std::exception & e) {
+        fprintf(stderr, "Error parsing messages: %s\n", e.what());
+        // Clean up any partially allocated messages
+        free_messages(result);
+        return {};
     }
-
-    return result;
 }
 
 char * llama_default_params(void) {
@@ -74,27 +108,34 @@ char * llama_default_params(void) {
 }
 
 int llama_llm_init(char * params) {
-    auto json_params = json::parse(params);
+    try {
+        auto json_params = json::parse(params);
 
-    if (!json_params.contains("model_path") || !json_params["model_path"].is_string()) {
-        fprintf(stderr, "Missing 'model_path' in parameters\n");
+        if (!json_params.contains("model_path") || !json_params["model_path"].is_string()) {
+            fprintf(stderr, "Missing 'model_path' in parameters\n");
+            return 1;
+        }
+
+        auto model_path = json_params["model_path"].get<std::string>();
+
+        auto model_params = llama_model_params_from_json(json_params);
+        auto context_params = llama_context_params_from_json(json_params);
+
+        ggml_backend_load_all();
+
+        model = llama_model_load_from_file(model_path.c_str(), model_params);
+        ctx = llama_init_from_model(model, context_params);
+        smpl = llama_sampler_from_json(model, json_params);
+
+        prev_len = 0;
+        return 0;
+    } catch (const json::exception & e) {
+        fprintf(stderr, "JSON parsing error in init: %s\n", e.what());
+        return 1;
+    } catch (const std::exception & e) {
+        fprintf(stderr, "Initialization error: %s\n", e.what());
         return 1;
     }
-
-    auto model_path = json_params["model_path"].get<std::string>();
-
-    auto model_params = llama_model_params_from_json(json_params);
-    auto context_params = llama_context_params_from_json(json_params);
-
-    ggml_backend_load_all();
-
-    model = llama_model_load_from_file(model_path.c_str(), model_params);
-    ctx = llama_init_from_model(model, context_params);
-    smpl = llama_sampler_from_json(model, json_params);
-
-    prev_len = 0;
-
-    return 0;
 }
 
 int llama_prompt(char * msgs, dart_output * output) {
@@ -103,10 +144,6 @@ int llama_prompt(char * msgs, dart_output * output) {
     std::lock_guard<std::mutex> lock(continue_mutex);
     stop_generation.store(false);
 
-    assert(model != nullptr);
-    assert(ctx != nullptr);
-    assert(smpl != nullptr);
-
     auto vocab = llama_model_get_vocab(model);
 
     std::vector<char> formatted(llama_n_ctx(ctx));
@@ -114,6 +151,7 @@ int llama_prompt(char * msgs, dart_output * output) {
     const char * tmpl = llama_model_chat_template(model, nullptr);
     int new_len =
         llama_chat_apply_template(tmpl, messages.data(), messages.size(), true, formatted.data(), formatted.size());
+
     if (new_len > (int) formatted.size()) {
         formatted.resize(new_len);
         new_len =
@@ -121,7 +159,8 @@ int llama_prompt(char * msgs, dart_output * output) {
     }
 
     if (new_len < 0) {
-        fprintf(stderr, "failed to apply the chat template\n");
+        fprintf(stderr, "Failed to apply the chat template\n");
+        free_messages(messages);
         return 1;
     }
 
@@ -137,23 +176,28 @@ int llama_prompt(char * msgs, dart_output * output) {
     std::vector<llama_token> prompt_tokens(n_prompt_tokens);
     if (llama_tokenize(vocab, prompt.c_str(), prompt.size(), prompt_tokens.data(), prompt_tokens.size(), is_first,
                        true) < 0) {
-        GGML_ABORT("failed to tokenize the prompt\n");
+        fprintf(stderr, "Failed to tokenize the prompt\n");
+        free_messages(messages);
+        return 1;
     }
 
     // prepare a batch for the prompt
     llama_batch batch = llama_batch_get_one(prompt_tokens.data(), prompt_tokens.size());
     llama_token new_token_id;
+
     while (!stop_generation.load()) {
         // check if we have enough space in the context to evaluate this batch
         int n_ctx = llama_n_ctx(ctx);
         int n_ctx_used = llama_kv_self_seq_pos_max(ctx, 0);
         if (n_ctx_used + batch.n_tokens > n_ctx) {
-            fprintf(stderr, "context size exceeded\n");
+            fprintf(stderr, "Context size exceeded\n");
             break;
         }
 
         if (llama_decode(ctx, batch)) {
-            GGML_ABORT("failed to decode\n");
+            fprintf(stderr, "Failed to decode batch\n");
+            free_messages(messages);
+            return 1;
         }
 
         // sample the next token
@@ -168,7 +212,9 @@ int llama_prompt(char * msgs, dart_output * output) {
         char buf[256];
         int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true);
         if (n < 0) {
-            GGML_ABORT("failed to convert token to piece\n");
+            fprintf(stderr, "Failed to convert token to piece\n");
+            free_messages(messages);
+            return 1;
         }
 
         std::string piece(buf, n);
@@ -180,13 +226,17 @@ int llama_prompt(char * msgs, dart_output * output) {
     }
 
     // add the response to the messages
-    messages.push_back({"assistant", strdup(response.c_str())});
+    llama_chat_message assistant_msg = {strdup("assistant"), strdup(response.c_str())};
+    messages.push_back(assistant_msg);
+
     prev_len = llama_chat_apply_template(tmpl, messages.data(), messages.size(), false, nullptr, 0);
     if (prev_len < 0) {
-        fprintf(stderr, "failed to apply the chat template\n");
+        fprintf(stderr, "Failed to apply the chat template for response\n");
+        free_messages(messages);
         return 1;
     }
 
+    free_messages(messages);
     output(nullptr);
     return 0;
 }
@@ -196,9 +246,24 @@ void llama_llm_stop(void) {
 }
 
 void llama_llm_free(void) {
-    llama_sampler_free(smpl);
-    llama_free(ctx);
-    llama_model_free(model);
+    std::lock_guard<std::mutex> lock(continue_mutex);
+
+    if (smpl) {
+        llama_sampler_free(smpl);
+        smpl = nullptr;
+    }
+
+    if (ctx) {
+        llama_free(ctx);
+        ctx = nullptr;
+    }
+
+    if (model) {
+        llama_model_free(model);
+        model = nullptr;
+    }
+
+    prev_len = 0;
 }
 
 static void llama_null_log_callback(enum ggml_log_level level, const char * text, void * user_data) {
@@ -208,5 +273,5 @@ static void llama_null_log_callback(enum ggml_log_level level, const char * text
 }
 
 void llama_log_disable(void) {
-    llama_log_set(llama_null_log_callback, NULL);
+    llama_log_set(llama_null_log_callback, nullptr);
 }
