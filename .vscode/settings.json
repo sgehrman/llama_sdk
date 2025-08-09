@@ -2,6 +2,12 @@
   "files.associations": {
     "atomic": "cpp"
   },
+  "[cpp]": {
+    "editor.formatOnSave": false
+  },
+  "[c]": {
+    "editor.formatOnSave": false
+  },
 
   "workbench.editor.scrollToSwitchTabs": true,
   "workbench.editor.limit.enabled": true,
