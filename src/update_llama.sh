@@ -16,7 +16,7 @@ rm -rf media
 rm -rf tests
 rm -rf .github
 rm -rf .git
-rm -rf vendor
+# rm -rf vendor
 rm -rf prompts
 rm -rf tools
 rm -rf scripts
