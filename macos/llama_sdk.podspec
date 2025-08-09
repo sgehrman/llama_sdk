@@ -68,6 +68,8 @@ llama_sdk is a dart implementation of llama.cpp used by the mobile artificial in
       '$(PODS_TARGET_SRCROOT)/src/llama_cpp/include/llama.h',
       '$(PODS_TARGET_SRCROOT)/src/llama_cpp/src',
       '$(PODS_TARGET_SRCROOT)/src/llama_cpp/common', 
+      # added vendor/nlohmann to fix include errors on macOS (SNG)
+      '$(PODS_TARGET_SRCROOT)/src/llama_cpp/vendor/nlohmann', 
       '$(PODS_TARGET_SRCROOT)/src/llama_cpp/ggml/include',
       '$(PODS_TARGET_SRCROOT)/src/llama_cpp/ggml/src',
       '$(PODS_TARGET_SRCROOT)/src/llama_cpp/ggml/src/ggml-cpu',
