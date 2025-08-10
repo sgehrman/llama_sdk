@@ -15,10 +15,14 @@ llama get lib {
     } else if (Platform.isLinux || Platform.isAndroid) {
       _lib = llama(ffi.DynamicLibrary.open('libllama.so'));
     } else if (Platform.isMacOS || Platform.isIOS) {
-      _lib = llama(ffi.DynamicLibrary.open('llama_sdk.framework/llama_sdk'));
+      _lib = llama(ffi.DynamicLibrary.open('llama.framework/llama'));
     } else {
       throw PlatformException(code: 'LlamaCPP Unsupported Platform');
     }
   }
+
+  print('_lib');
+  print(_lib);
+
   return _lib!;
 }
